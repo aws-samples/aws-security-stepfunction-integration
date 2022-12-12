@@ -1,0 +1,8 @@
+# vscode
+.vscode/
+
+# osx
+.DS_Store
+
+# Pycharm
+.idea/

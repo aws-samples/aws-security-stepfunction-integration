@@ -1,0 +1,2074 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AWS Security StepFunction Integration [SSI] - As Security is our highest priority and AWS's security services required by regulated industries 
+  are not enabled out of the box, this project orchestrates and choreographs foundational security requirements to secure a singular account 
+  for development purposes,  which would typically be done manually or require several layers of tooling to automate.
+
+#####################################################
+#
+# Parameters
+#
+#####################################################
+Parameters:
+  pNotificationEmail:
+    Type: String
+    Description: "Email address that will be alerted if deployment fails."
+    Default: ""
+
+  pDeploymentFrequency:
+    Type: Number
+    Description: "Deployment Frequency (minutes):"
+    Default: 60
+    MinValue : "2"
+    ConstraintDescription: "Must be greater than 1."
+
+  pSecHubStandardAwsFun:
+    Type: String
+    Description: "The standard is defined by AWS security experts. This curated set of controls helps improve your security posture in AWS, and covers AWS's most popular and foundational services."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      #- "false" [mandatory]
+
+  pSecHubStandardCIS: 
+    Type: String
+    Description: "The Center for Internet Security (CIS) AWS Foundations Benchmark v1.2.0 is a set of security configuration best practices for AWS."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pSecHubStandardPCI: 
+    Type: String
+    Description: "The Payment Card Industry Data Security Standard (PCI DSS) v3.2.1 is an information security standard for entities that store, process, and/or transmit cardholder data."
+    Default: "false"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pMultiRegionTrail:
+    Type: String
+    Description: "You can configure AWS CloudTrail to deliver log files from multiple regions to a single S3 bucket for a single account."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pConformancePack:
+    Type: String
+    Description: "A collection of AWS Config rules and remediation actions."
+    Default: "AWS-Control-Tower-Detective-Guardrails"
+    AllowedValues: 
+      - "AWS-Control-Tower-Detective-Guardrails"
+      - "Operational-Best-Practices-for-CIS"
+
+  pGuardduty:
+    Type: String
+    Description: "Amazon GuardDuty is a monitoring service that analyzes core services to generate security findings for your account."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pMacie:
+    Type: String
+    Description: "Amazon Macie is a fully managed data security and data privacy service that uses machine learning and pattern matching to discover and protect your sensitive data in AWS."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pAuditManager:
+    Type: String
+    Description: "AWS Audit Manager helps you continuously audit your AWS usage to simplify how you assess risk and compliance with regulations and industry standards."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pInspector:
+    Type: String
+    Description: "Automated and continual vulnerability management at scale."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pS3BPA:
+    Type: String
+    Description: "The Amazon S3 Block Public Access feature provides settings for access points, buckets, and accounts to block public access to Amazon S3 resources."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+  pEbsEncrypt:
+    Type: String
+    Description: "Enforce the encryption of new Amazon EBS volumes and snapshot copies that you create."
+    Default: "true"
+    AllowedValues: 
+      - "true"
+      - "false"
+
+#####################################################
+#
+# Metadata
+#
+#####################################################
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Deployment Settings"
+        Parameters:
+          - pNotificationEmail
+          - pDeploymentFrequency
+      - Label:
+          default: "AWS Security Hub"
+        Parameters:
+          -  pSecHubStandardAwsFun
+          -  pSecHubStandardCIS
+          -  pSecHubStandardPCI
+      - Label:
+          default: "AWS CloudTrail"
+        Parameters:
+          - pMultiRegionTrail
+      - Label:
+          default: "AWS Config"
+        Parameters:
+          - pConformancePack
+      - Label:
+          default: "AWS GuardDuty"
+        Parameters:
+          - pGuardduty
+      - Label:
+          default: "Amazon Macie"
+        Parameters:
+          - pMacie
+      - Label:
+          default: "AWS Audit Manager"
+        Parameters:
+          - pAuditManager
+      - Label:
+          default: "Amazon Inspector"
+        Parameters:
+          - pInspector
+      - Label:
+          default: "Account Level Settings"
+        Parameters:
+          - pS3BPA
+          - pEbsEncrypt
+    ParameterLabels:
+      pNotificationEmail:
+        default: "Notification Email:"
+      pDeploymentFrequency:
+        default: "Deployment frequency:"
+      pSecHubStandardAwsFun:
+        default: "AWS Foundational Security Best Practices [Mandatory]" 
+      pSecHubStandardCIS:
+        default: "CIS AWS Foundations Benchmark"   
+      pSecHubStandardPCI:
+        default: "PCI DSS"
+      pMultiRegionTrail:
+        default: "Create multi region trail"
+      pConformancePack:
+        default: "Conformance Pack"
+      pGuardduty:
+        default: "Enable Guardduty"
+      pMacie:
+        default: "Enable Macie"
+      pAuditManager:
+        default: "Enable Audit Manager"
+      pInspector:
+        default: "Enable Amazon Inspector"
+      pS3BPA:
+        default: "Block public access to your Amazon S3 storage"
+      pEbsEncrypt:
+        default: "Enforce EBS encryption"
+
+#####################################################"
+#
+# Mapping
+#
+#####################################################
+
+Mappings:
+
+  mConformancePacks: 
+    AWS-Control-Tower-Detective-Guardrails: 
+      Value: AWS-Control-Tower-Detective-Guardrails.yaml
+    Operational-Best-Practices-for-CIS: 
+      Value: Operational-Best-Practices-for-CIS.yaml
+
+
+#####################################################
+#
+# Resources
+#
+#####################################################
+
+Resources:
+
+  rStepFunctionMainRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement":
+            [
+              {
+                "Effect": "Allow",
+                "Principal": { "Service": "states.amazonaws.com" },
+                "Action": "sts:AssumeRole",
+              },
+            ],
+        }
+      Description: Permissions For StepFunction to run.
+      Policies:
+        - PolicyName: StepFunctionsLogs
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: "*"
+        - PolicyName: StepFunctionsCWLogs
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutTargets
+                  - events:PutRule
+                  - events:DescribeRule
+                Resource:
+                  - !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule
+        - PolicyName: WorkerStepFunctionExecution
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                  - states:DescribeExecution
+                  - states:StopExecution
+                Resource:
+                  - !Ref rSecurityHubSSI
+                  - !Ref rCloudTrailSSI
+                  - !Ref rConfigSSI
+                  - !Ref rGuardDutySSI
+                  - !Ref rMacieSSI
+                  - !Ref rAuditManagerSSI
+                  - !Ref rInspectorSSI
+                  - !Ref rAccountLevelSettingsSSI
+        - PolicyName: PublishError
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish 
+                Resource:
+                  - !Ref rSnsError
+
+  rStepFunctionWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement":
+            [
+              {
+                "Effect": "Allow",
+                "Principal": { "Service": "states.amazonaws.com" },
+                "Action": "sts:AssumeRole",
+              },
+            ],
+        }
+      Description: Permissions For StepFunction to run.
+      Policies:
+        - PolicyName: StepFunctionsLogs
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: "*"
+        - PolicyName: IAM
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt rConfigRole.Arn
+        - PolicyName: S3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:GetBucketAcl
+                Resource:
+                  - "arn:aws:s3:::aws-security-stepfunction-integration"
+                  - "arn:aws:s3:::aws-security-stepfunction-integration/*"
+              - Effect: Allow
+                Action:
+                 - s3:GetBucketAcl
+                Resource:
+                  - !GetAtt rS3LoggingBucket.Arn
+        - PolicyName: SecurityHub
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - securityhub:DescribeHub
+                  - securityhub:EnableSecurityHub
+                  - securityhub:BatchEnableStandards
+                Resource: "*"
+        - PolicyName: CloudTrail
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudtrail:GetTrail
+                  - cloudtrail:StartLogging
+                  - cloudtrail:StopLogging
+                  - cloudtrail:GetTrail
+                  - cloudtrail:GetTrailStatus
+                  - cloudtrail:GetEventSelectors
+                  - cloudtrail:GetEventSelectors
+                  - cloudtrail:CreateTrail
+                Resource: 
+                  - !Sub "arn:aws:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/SSI-Multi-Region-Trail"
+        - PolicyName: Config
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - config:DescribeConfigurationRecorders
+                  - config:DescribeDeliveryChannels
+                  - config:DescribeConformancePacks
+                  - config:PutConfigurationRecorder
+                  - config:PutDeliveryChannel
+                  - config:PutConformancePack
+                  - config:StartConfigurationRecorder
+                Resource: "*"
+        - PolicyName: Guardduty
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - guardduty:ListDetectors
+                  - guardduty:CreateDetector
+                  - guardduty:CreatePublishingDestination
+                Resource: "*"
+        - PolicyName: Macie
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - macie2:EnableMacie
+                  - macie2:GetMacieSession
+                  - macie2:PutClassificationExportConfiguration                
+                Resource: "*" 
+        - PolicyName: AuditManager
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - auditmanager:RegisterAccount
+                  - auditmanager:GetAccountStatus    
+                Resource: "*" 
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                Resource: "*" 
+                Condition:
+                  StringEquals:
+                    events:source: "aws.securityhub"
+                    events:detail-type: "Security Hub Findings - Imported"
+              - Effect: Allow
+                Action:
+                  - events:PutTargets
+                Resource: "arn:aws:events:*:*:rule/AuditManagerSecurityHubFindingsReceiver"
+        - PolicyName: Inspector
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - inspector2:BatchGetAccountStatus
+                  - inspector2:Enable  
+                Resource: "*"
+        - PolicyName: AccountLevelSettings
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutAccountPublicAccessBlock
+                  - s3:GetAccountPublicAccessBlock
+                  - elasticmapreduce:PutBlockPublicAccessConfiguration
+                  - elasticmapreduce:GetBlockPublicAccessConfiguration
+                  - ec2:EnableEbsEncryptionByDefault 
+                  - ec2:GetEbsEncryptionByDefault   
+                Resource: "*" 
+
+  rConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        {
+          "Version": "2012-10-17",
+          "Statement":
+            [
+              {
+                "Effect": "Allow",
+                "Principal": { "Service": "config.amazonaws.com" },
+                "Action": "sts:AssumeRole",
+              },
+            ],
+        }
+      Description: Permissions For StepFunction to run.
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWS_ConfigRole
+      Policies:
+        - PolicyName: S3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !GetAtt rS3LoggingBucket.Arn
+        - PolicyName: KMS
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt rS3LoggingKMSKey.Arn
+
+  rTriggerExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "events.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: assumeRoleConfCheck
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !GetAtt rMainSSI.Arn
+
+  rTriggerSM:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: Triggers the SM from s3 upload
+      ScheduleExpression: !Sub "rate(${pDeploymentFrequency} minutes)"
+      Targets: 
+        - Id: StateMachine
+          Arn: !GetAtt rMainSSI.Arn
+          RoleArn: !GetAtt  rTriggerExecutionRole.Arn
+
+  rSSILogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "/aws/states/SSI"
+      RetentionInDays: 30
+
+  rSnsError:    
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: SSI-DeploymentErrors
+      Subscription: 
+        - Endpoint: !Ref pNotificationEmail
+          Protocol: email
+
+  rS3LoggingBucket:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::S3::Bucket
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      BucketName: !Sub ssi-logging-${AWS::AccountId}-${AWS::Region}
+      AccessControl: LogDeliveryWrite
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref rS3LoggingKMSKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  rS3LoggingBucketPolicy:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref rS3LoggingBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AWSServicesAclCheck
+            Effect: Allow
+            Principal: 
+              Service: 
+                - "cloudtrail.amazonaws.com"
+                - "config.amazonaws.com"
+                - "guardduty.amazonaws.com"
+                - "macie.amazonaws.com"
+            Action: 
+              - "s3:GetBucketAcl"
+              - "s3:ListBucket"
+              - "s3:GetBucketLocation"
+            Resource: 
+              - !Sub arn:aws:s3:::${rS3LoggingBucket}
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Sub "${AWS::AccountId}"
+          - Sid: AWSServicesAclCheckWrite
+            Effect: Allow
+            Principal: 
+              Service: 
+                - "cloudtrail.amazonaws.com"
+                - "config.amazonaws.com"
+                - "guardduty.amazonaws.com"
+                - "macie.amazonaws.com"
+            Action: "s3:PutObject"
+            Resource: 
+              - !Sub arn:aws:s3:::${rS3LoggingBucket}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: "bucket-owner-full-control"
+                aws:SourceAccount: !Sub "${AWS::AccountId}" 
+          - Sid: SSLAccessToBucket
+            Effect: Deny
+            Principal: "*"
+            Action: "*"
+            Resource:
+              - !Sub "arn:aws:s3:::${rS3LoggingBucket}"
+              - !Sub "arn:aws:s3:::${rS3LoggingBucket}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  rS3LoggingKMSKey:
+    Type: AWS::KMS::Key
+    Properties: 
+      Description: KMS key for logging bucket
+      EnableKeyRotation: true
+      KeyPolicy: !Sub '{
+          "Version": "2012-10-17",
+          "Statement": [
+              {
+                  "Sid": "Enable IAM User Permissions",
+                  "Effect": "Allow",
+                  "Principal": {
+                      "AWS": "arn:aws:iam::${AWS::AccountId}:root"
+                  },
+                  "Action": "kms:*",
+                  "Resource": "*"
+              },
+              {
+                  "Sid": "Allow AWS services to use the encryption key",
+                  "Effect": "Allow",
+                  "Principal": {
+                      "Service": [
+                          "macie.amazonaws.com",
+                          "cloudtrail.amazonaws.com",
+                          "guardduty.amazonaws.com",
+                          "config.amazonaws.com"
+                      ]
+                  },
+                  "Action": [
+                      "kms:Encrypt",
+                      "kms:Decrypt",
+                      "kms:ReEncrypt*",
+                      "kms:GenerateDataKey*",
+                      "kms:DescribeKey"
+                  ],
+                  "Resource": "*",
+                  "Condition":{
+                    "StringEquals": {
+                      "aws:SourceAccount": "${AWS::AccountId}"
+                    }
+                  }
+              }
+          ]
+      }'
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      MultiRegion: true
+
+  rS3LoggingKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties: 
+      AliasName: alias/SSI-Logging-Key
+      TargetKeyId: !Ref rS3LoggingKMSKey
+
+  rMainSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-Main"
+      DefinitionString: !Sub '{
+        "Comment": "AWS Security StepFunction Integration main orchestration",
+        "StartAt": "Try Catch block to Notify users",
+        "States": {
+          "Try Catch block to Notify users": {
+            "Type": "Parallel",
+            "Branches": [
+              {
+                "StartAt": "Load Config",
+                "States": {
+                  "Load Config": {
+                    "Type": "Pass",
+                    "Next": "Configure AWS Security Hub",
+                    "Result": {
+                      "LoggingBucket": {
+                        "Description": "S3 Bucket created as part of inital cloudformation deployment used to store logs",
+                        "Name": "${rS3LoggingBucket}",
+                        "Arn": "${rS3LoggingBucket.Arn}"
+                      }
+                    }
+                  },
+                  "Configure AWS Security Hub": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rSecurityHubSSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                    "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.SecurityHub",
+                    "Next": "Configure AWS CloudTrail across all regions"
+                  },
+                  "Configure AWS CloudTrail across all regions": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rCloudTrailSSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                    "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.CloudTrail",
+                    "Next": "Configure AWS Config"
+                  },
+                  "Configure AWS Config": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rConfigSSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                    "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.Config",
+                    "Next": "Configure AWS GuardDuty"
+                  },
+                  "Configure AWS GuardDuty": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rGuardDutySSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                    "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.GuardDuty",
+                    "Next": "Configure Amazon Macie"
+                  },
+                  "Configure Amazon Macie": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rMacieSSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                    "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.Macie",
+                    "Next": "Configure AWS Audit Manager"
+                  },
+                  "Configure AWS Audit Manager": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rAuditManagerSSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                    "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.AuditManager",
+                    "Next": "Configure AWS Inspector"
+                  },
+                  "Configure AWS Inspector": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rInspectorSSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                    "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.Inspector",
+                    "Next": "Configure Account Level Settings"
+                  },
+                  "Configure Account Level Settings": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                    "Parameters": {
+                      "StateMachineArn": "${rAccountLevelSettingsSSI.Arn}",
+                      "Input": {
+                        "StatePayload": "Hello from Step Functions!",
+                        "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+                      }
+                    },
+                     "ResultSelector": {
+                      "Status.$": "$.Output"
+                    },
+                    "ResultPath": "$.AccountLevelSettings",
+                    "End": true
+                  }
+                }
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "Notify Error"
+              }
+            ],
+            "End": true
+          },
+          "Notify Error": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sns:publish",
+            "Parameters": {
+              "Message.$": "$",
+              "TopicArn": "${rSnsError}"
+            },
+            "Next": "Fail"
+          },
+          "Fail": {
+            "Type": "Fail"
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionMainRole.Arn
+      StateMachineType: STANDARD
+
+  rSecurityHubSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-SecurityHub"
+      DefinitionString: !Sub '{
+        "Comment": "SecurityHub state machine",
+        "StartAt": "Check SecurityHub Status",
+        "States": {
+          "Check SecurityHub Status": {
+            "Type": "Task",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:securityhub:describeHub",
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "Is AWS Security Hub subscribed?"
+              }
+            ],
+            "Next": "Is AWS Security Hub subscribed?"
+          },
+          "Is AWS Security Hub subscribed?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.SubscribedAt",
+                "IsPresent": true,
+                "Comment": "Yes",
+                "Next": "AWS Security Hub is subscribed"
+              },
+              {
+                "Variable": "$.AttemptedToEnable",
+                "IsPresent": true,
+                "Comment": "Attempted to enable failed",
+                "Next": "Fail"
+              },
+              {
+                "Variable": "$.Error",
+                "StringEquals": "SecurityHub.InvalidAccessException",
+                "Comment": "No",
+                "Next": "EnableSecurityHub"
+              }
+            ],
+            "Default": "Fail"
+          },
+          "EnableSecurityHub": {
+            "Type": "Task",
+            "Next": "Get Deployment Parameters",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:securityhub:enableSecurityHub"
+          },
+          "Get Deployment Parameters": {
+            "Type": "Pass",
+            "Next": "Match inputs to batch command",
+            "Result": {
+              "DeploymentInput": {
+                "AWS":  ${pSecHubStandardAwsFun},
+                "CIS": ${pSecHubStandardCIS},
+                "PCI": ${pSecHubStandardPCI}
+              },
+              "CommandMapping": {
+                "AWS": [
+                  {
+                    "StandardsArn": "arn:aws:securityhub:${AWS::Region}::standards/aws-foundational-security-best-practices/v/1.0.0"
+                  }
+                ],
+                "AWS+CIS": [
+                  {
+                    "StandardsArn": "arn:aws:securityhub:${AWS::Region}::standards/aws-foundational-security-best-practices/v/1.0.0"
+                  },
+                  {
+                    "StandardsArn": "arn:aws:securityhub:::ruleset/cis-aws-foundations-benchmark/v/1.2.0"
+                  }
+                ],
+                "AWS+PCI": [
+                  {
+                    "StandardsArn": "arn:aws:securityhub:${AWS::Region}::standards/aws-foundational-security-best-practices/v/1.0.0"
+                  },
+                  {
+                    "StandardsArn": "arn:aws:securityhub:${AWS::Region}::standards/pci-dss/v/3.2.1"
+                  }
+                ],
+                "AWS+CIS+PCI": [
+                  {
+                    "StandardsArn": "arn:aws:securityhub:${AWS::Region}::standards/aws-foundational-security-best-practices/v/1.0.0"
+                  },
+                  {
+                    "StandardsArn": "arn:aws:securityhub:::ruleset/cis-aws-foundations-benchmark/v/1.2.0"
+                  },
+                  {
+                    "StandardsArn": "arn:aws:securityhub:${AWS::Region}::standards/pci-dss/v/3.2.1"
+                  }
+                ]
+              }
+            },
+            "Parameters": {
+              "Region": "${AWS::Region}"
+            }
+          },
+          "Match inputs to batch command": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "And": [
+                  {
+                    "Variable": "$.DeploymentInput.AWS",
+                    "BooleanEquals": true
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.CIS",
+                    "BooleanEquals": true
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.PCI",
+                    "BooleanEquals": true
+                  }
+                ],
+                "Comment": "AWS CIS PCI",
+                "Next": "AWS + CIS + PCI"
+              },
+              {
+                "And": [
+                  {
+                    "Variable": "$.DeploymentInput.AWS",
+                    "BooleanEquals": true
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.CIS",
+                    "BooleanEquals": true
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.PCI",
+                    "BooleanEquals": false
+                  }
+                ],
+                "Comment": "AWS CIS",
+                "Next": "AWS + CIS"
+              },
+              {
+                "And": [
+                  {
+                    "Variable": "$.DeploymentInput.AWS",
+                    "BooleanEquals": true
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.CIS",
+                    "BooleanEquals": false
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.PCI",
+                    "BooleanEquals": true
+                  }
+                ],
+                "Comment": "AWS PCI",
+                "Next": "AWS + PCI"
+              },
+              {
+                "And": [
+                  {
+                    "Variable": "$.DeploymentInput.AWS",
+                    "BooleanEquals": true
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.CIS",
+                    "BooleanEquals": false
+                  },
+                  {
+                    "Variable": "$.DeploymentInput.CIS",
+                    "BooleanEquals": false
+                  }
+                ],
+                "Next": "AWS",
+                "Comment": "AWS"
+              }
+            ],
+            "Default": "Input error"
+          },
+          "AWS + CIS + PCI": {
+            "Type": "Pass",
+            "Next": "EnableStandards",
+            "InputPath": "$.CommandMapping.AWS+CIS+PCI",
+            "ResultPath": "$.ResultStandards"
+          },
+          "AWS + PCI": {
+            "Type": "Pass",
+            "Next": "EnableStandards",
+            "InputPath": "$.CommandMapping.AWS+PCI",
+            "ResultPath": "$.ResultStandards"
+          },
+          "AWS + CIS": {
+            "Type": "Pass",
+            "Next": "EnableStandards",
+            "InputPath": "$.CommandMapping.AWS+CIS",
+            "ResultPath": "$.ResultStandards"
+          },
+          "AWS": {
+            "Type": "Pass",
+            "Next": "EnableStandards",
+            "InputPath": "$.CommandMapping.AWS",
+            "ResultPath": "$.ResultStandards"
+          },
+          "EnableStandards": {
+            "Type": "Task",
+            "Parameters": {
+              "StandardsSubscriptionRequests.$": "$.ResultStandards"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:securityhub:batchEnableStandards",
+            "Next": "Attempted to enable AWS Security Hub"
+          },
+          "Attempted to enable AWS Security Hub": {
+            "Type": "Pass",
+            "Next": "Check SecurityHub Status",
+            "Result": {
+              "AttemptedToEnable": "true"
+            }
+          },
+          "AWS Security Hub is subscribed": {
+            "Type": "Pass",
+            "Result": "AWS Security Hub is subscribed",
+            "End": true
+          },
+          "Input error": {
+            "Type": "Fail",
+            "Error": "Inputs do not match with standards"
+          },
+          "Fail": {
+            "Type": "Fail"
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
+
+  rCloudTrailSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-CloudTrail"
+      DefinitionString: !Sub '{
+        "Comment": "Cloud Trail state machine",
+        "StartAt": "Get Trail",
+        "States": {
+          "Get Trail": {
+            "Type": "Task",
+            "Next": "Has a Trail been created?",
+            "Parameters": {
+              "Name": "SSI-Multi-Region-Trail"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:cloudtrail:getTrail",
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "Has a Trail been created?"
+              }
+            ]
+          },
+          "Has a Trail been created?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.Trail",
+                "IsPresent": true,
+                "Comment": "Yes",
+                "Next": "GetTrailStatus"
+              },
+              {
+                "Variable": "$.AttemptedToCreateTrail",
+                "IsPresent": true,
+                "Comment": "Attempt to create trail failed",
+                "Next": "Fail"
+              },
+              {
+                "Variable": "$.Error",
+                "StringEquals": "CloudTrail.TrailNotFoundException",
+                "Comment": "No",
+                "Next": "Get deployment parameters"
+              }
+            ],
+            "Default": "Fail"
+          },
+          "GetTrailStatus": {
+            "Type": "Task",
+            "Next": "Is Trail logging?",
+            "Parameters": {
+              "Name": "SSI-Multi-Region-Trail"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:cloudtrail:getTrailStatus"
+          },
+          "Is Trail logging?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.IsLogging",
+                "BooleanEquals": true,
+                "Next": "Trail exists and Logging",
+                "Comment": "Trail is logging"
+              }
+            ],
+            "Default": "StartLogging"
+          },
+          "StartLogging": {
+            "Type": "Task",
+            "Parameters": {
+              "Name": "SSI-Multi-Region-Trail"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:cloudtrail:startLogging",
+            "Next": "Trail exists and Logging"
+          },
+          "Trail exists and Logging": {
+            "Type": "Pass",
+            "Result": {
+              "Status": "Trail exists and logging"
+            },
+            "End": true
+          },
+          "Get deployment parameters": {
+            "Type": "Pass",
+            "Next": "Should there be?",
+            "Result": {
+              "CreateMultiRegionTrail": ${pMultiRegionTrail}
+            }
+          },
+          "Should there be?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.CreateMultiRegionTrail",
+                "BooleanEquals": true,
+                "Next": "Create Trail",
+                "Comment": "Yes"
+              },
+              {
+                "Variable": "$.CreateMultiRegionTrail",
+                "BooleanEquals": false,
+                "Next": "Skipping Trail Creation",
+                "Comment": "No"
+              }
+            ],
+            "Default": "Create Trail"
+          },
+          "Create Trail": {
+            "Type": "Task",
+            "Next": "Attempted to create Trail",
+            "Parameters": {
+              "IncludeGlobalServiceEvents": true,
+              "IsMultiRegionTrail": true,
+              "EnableLogFileValidation": true,
+              "Name": "SSI-Multi-Region-Trail",
+              "S3BucketName": "${rS3LoggingBucket}",
+              "KmsKeyId": "${rS3LoggingKMSKey}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:cloudtrail:createTrail"
+          },
+          "Attempted to create Trail": {
+            "Type": "Pass",
+            "Next": "Get Trail",
+            "Result": {
+              "AttemptedToCreateTrail": "true"
+            }
+          },
+          "Fail": {
+            "Type": "Fail"
+          },
+          "Skipping Trail Creation": {
+            "Type": "Pass",
+            "End": true,
+            "Result": {
+              "Status": "CloudTrail not configured as per deployment settings"
+            }
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
+
+  rConfigSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-Config"
+      DefinitionString: 
+        !Sub 
+        - '{
+            "Comment": "Config state machine",
+            "StartAt": "DescribeConfigurationRecorders",
+            "States": {
+              "DescribeConfigurationRecorders": {
+                "Type": "Task",
+                "Next": "Check Configuration Recorder exists",
+                "Parameters": {},
+                "Resource": "arn:aws:states:::aws-sdk:config:describeConfigurationRecorders"
+              },
+              "Check Configuration Recorder exists": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.AttemptedToCreateConfigurationRecorder",
+                    "IsPresent": true,
+                    "Next": "Fail"
+                  },
+                  {
+                    "And": [
+                      {
+                        "Variable": "$.ConfigurationRecorders[0]",
+                        "IsPresent": true
+                      },
+                      {
+                        "Variable": "$.ConfigurationRecorders[0].Name",
+                        "StringEquals": "SSI-Config-Recorder"
+                      }
+                    ],
+                    "Next": "DescribeDeliveryChannels"
+                  },
+                  {
+                    "Not": {
+                      "Variable": "$.ConfigurationRecorders[0]",
+                      "IsPresent": true
+                    },
+                    "Next": "PutConfigurationRecorder"
+                  }
+                ],
+                "Default": "Fail"
+              },
+              "PutConfigurationRecorder": {
+                "Type": "Task",
+                "Parameters": {
+                  "ConfigurationRecorder": {
+                    "Name": "SSI-Config-Recorder",
+                    "RoleARN": "${rConfigRoleArn}",
+                    "RecordingGroup": {
+                      "AllSupported": true,
+                      "IncludeGlobalResourceTypes": true
+                    }
+                  }
+                },
+                "Resource": "arn:aws:states:::aws-sdk:config:putConfigurationRecorder",
+                "Next": "Attempted to create Configuration Recorder"
+              },
+              "Attempted to create Configuration Recorder": {
+                "Type": "Pass",
+                "Next": "DescribeConfigurationRecorders",
+                "Result": {
+                  "AttemptedToCreateConfigurationRecorder": "true"
+                }
+              },
+              "DescribeDeliveryChannels": {
+                "Type": "Task",
+                "Next": "Check Configuration Delivery Channels",
+                "Parameters": {},
+                "Resource": "arn:aws:states:::aws-sdk:config:describeDeliveryChannels"
+              },
+              "Check Configuration Delivery Channels": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "And": [
+                      {
+                        "Variable": "$.DeliveryChannels[0].Name",
+                        "IsPresent": true
+                      },
+                      {
+                        "Variable": "$.DeliveryChannels[0].Name",
+                        "StringEquals": "SSI-Config-Channel"
+                      }
+                    ],
+                    "Comment": "Yes",
+                    "Next": "AWS Config is enabled"
+                  },
+                  {
+                    "Variable": "$.AttemptedToEnableConfig",
+                    "IsPresent": true,
+                    "Comment": "Attempted to enable failed",
+                    "Next": "Fail"
+                  },
+                  {
+                    "Not": {
+                      "Variable": "$.DeliveryChannels[0]",
+                      "IsPresent": true
+                    },
+                    "Comment": "No",
+                    "Next": "PutDeliveryChannel"
+                  }
+                ],
+                "Default": "Fail"
+              },
+              "PutDeliveryChannel": {
+                "Type": "Task",
+                "Next": "StartConfigurationRecorder",
+                "Parameters": {
+                  "DeliveryChannel": {
+                    "Name": "SSI-Config-Channel",
+                    "S3BucketName": "${rS3LoggingBucket}",
+                    "S3KeyPrefix": "Config/DeliveryChannel"
+                  }
+                },
+                "Resource": "arn:aws:states:::aws-sdk:config:putDeliveryChannel"
+              },
+              "StartConfigurationRecorder": {
+                "Type": "Task",
+                "Next": "Attempted to enable AWS Config",
+                "Parameters": {
+                  "ConfigurationRecorderName": "SSI-Config-Recorder"
+                },
+                "Resource": "arn:aws:states:::aws-sdk:config:startConfigurationRecorder"
+              },
+              "Attempted to enable AWS Config": {
+                "Type": "Pass",
+                "Next": "DescribeDeliveryChannels",
+                "Result": {
+                  "AttemptedToEnableConfig": "true"
+                }
+              },
+              "AWS Config is enabled": {
+                "Type": "Pass",
+                "Result": "AWS Config is enabled",
+                "Next": "DescribeConformancePacks"
+              },
+              "DescribeConformancePacks": {
+                "Type": "Task",
+                "Next": "Conformance pack exists?",
+                "Parameters": {},
+                "Resource": "arn:aws:states:::aws-sdk:config:describeConformancePacks"
+              },
+              "Conformance pack exists?": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.ConformancePackDetails[0]",
+                    "IsPresent": true,
+                    "Next": "Conformance packs deployed"
+                  },
+                  {
+                    "Not": {
+                      "Variable": "$.ConformancePackDetails[0]",
+                      "IsPresent": true
+                    },
+                    "Next": "PutConformancePack"
+                  }
+                ],
+                "Default": "Fail"
+              },
+              "Conformance packs deployed": {
+                "Type": "Pass",
+                "End": true,
+                "Result": {
+                  "Config": "AWS Config is enabled",
+                  "ConformancePack": "Conformance pack deployed"
+                }
+              },
+              "PutConformancePack": {
+                "Type": "Task",
+                "Parameters": {
+                  "ConformancePackName": "${pConformancePack}",
+                  "DeliveryS3Bucket": "${rS3LoggingBucket}",
+                  "DeliveryS3KeyPrefix": "Config/ConformancePack",
+                  "TemplateS3Uri": "s3://aws-security-stepfunction-integration/aws-config-rules/${pConformancePackTpl}"
+                },
+                "Resource": "arn:aws:states:::aws-sdk:config:putConformancePack",
+                "Next": "DescribeConformancePacks"
+              },
+              "Fail": {
+                "Type": "Fail"
+              }
+            }
+          }'
+        - {
+            pConformancePack: !Ref pConformancePack,
+            pConformancePackTpl: !FindInMap [mConformancePacks, !Ref pConformancePack, Value],
+            rS3LoggingBucket: !Ref rS3LoggingBucket,
+            rConfigRoleArn : !GetAtt rConfigRole.Arn
+          }
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
+
+  rGuardDutySSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-GuardDuty"
+      DefinitionString: !Sub '{
+        "Comment": "Guard Duty state machine",
+        "StartAt": "ListDetectors",
+        "States": {
+          "ListDetectors": {
+            "Type": "Task",
+            "Next": "Is Amazon GuardDuty enabled?",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:guardduty:listDetectors"
+          },
+          "Is Amazon GuardDuty enabled?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.DetectorIds[0]",
+                "IsPresent": true,
+                "Comment": "Yes",
+                "Next": "Amazon GuardDuty enabled"
+              },
+              {
+                "Variable": "$.AttemptedToEnableGuardDuty",
+                "IsPresent": true,
+                "Comment": "Attempted to enable failed",
+                "Next": "Fail"
+              },
+              {
+                "And": [
+                  {
+                    "Variable": "$.Error",
+                    "IsPresent": true
+                  },
+                  {
+                    "Variable": "$.Error",
+                    "StringEquals": "GuardDuty.BadRequestException"
+                  }
+                ],
+                "Comment": "No",
+                "Next": "Get deployment parameters"
+              },
+              {
+                "Not": {
+                  "Variable": "$.DetectorIds[0]",
+                  "IsPresent": true
+                },
+                "Next": "Get deployment parameters"
+              }
+            ],
+            "Default": "Get deployment parameters"
+          },
+          "Get deployment parameters": {
+            "Type": "Pass",
+            "Next": "Should it be?",
+            "Result": {
+              "EnableGuardduty": ${pGuardduty}
+            }
+          },
+          "Should it be?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.EnableGuardduty",
+                "BooleanEquals": true,
+                "Next": "Create Detector",
+                "Comment": "Yes"
+              },
+              {
+                "Variable": "$.EnableGuardduty",
+                "BooleanEquals": false,
+                "Next": "Skipping Detector Creation",
+                "Comment": "No"
+              }
+            ],
+            "Default": "Create Detector"
+          },
+          "Create Detector": {
+            "Type": "Task",
+            "Next": "CreatePublishingDestination",
+            "Parameters": {
+              "Enable": "true"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:guardduty:createDetector"
+          },
+          "CreatePublishingDestination": {
+            "Type": "Task",
+            "Parameters": {
+              "DestinationProperties": {
+                "DestinationArn": "${rS3LoggingBucket.Arn}",
+                "KmsKeyArn": "${rS3LoggingKMSKey.Arn}"
+              },
+              "DestinationType": "S3",
+              "DetectorId.$": "$.DetectorId"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:guardduty:createPublishingDestination",
+            "Next": "Attempted to enable Amazon GuardDuty"
+          },
+          "Attempted to enable Amazon GuardDuty": {
+            "Type": "Pass",
+            "Next": "ListDetectors",
+            "Result": {
+              "AttemptedToEnableGuardDuty": "true"
+            }
+          },
+          "Amazon GuardDuty enabled": {
+            "Type": "Pass",
+            "Result": "Amazon GuardDuty enabled",
+            "End": true
+          },
+          "Fail": {
+            "Type": "Fail"
+          },
+          "Skipping Detector Creation": {
+            "Type": "Pass",
+            "End": true,
+            "Result": {
+              "Status": "GuardDuty not configured as per deployment settings"
+            }
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
+
+  rMacieSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-Macie"
+      DefinitionString: !Sub '{
+        "Comment": "Macie state machine",
+        "StartAt": "GetMacieSession",
+        "States": {
+          "GetMacieSession": {
+            "Type": "Task",
+            "Next": "Is Macie enabled?",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:macie2:getMacieSession",
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "Is Macie enabled?"
+              }
+            ]
+          },
+          "Is Macie enabled?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "And": [
+                  {
+                    "Variable": "$.Status",
+                    "IsPresent": true
+                  },
+                  {
+                    "Variable": "$.Status",
+                    "StringEquals": "ENABLED"
+                  }
+                ],
+                "Comment": "Yes",
+                "Next": "Macie enabled"
+              }
+            ],
+            "Default": "Get deployment parameters"
+          },
+          "Get deployment parameters": {
+            "Type": "Pass",
+            "Next": "Should it be enabled?",
+            "Result": {
+              "EnableMacie": ${pMacie}
+            }
+          },
+          "Should it be enabled?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.EnableMacie",
+                "BooleanEquals": true,
+                "Next": "EnableMacie",
+                "Comment": "Yes"
+              },
+              {
+                "Variable": "$.EnableMacie",
+                "BooleanEquals": false,
+                "Next": "Skipping Macie Setup"
+              }
+            ],
+            "Default": "Fail"
+          },
+          "EnableMacie": {
+            "Type": "Task",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:macie2:enableMacie",
+            "Next": "PutClassificationExportConfiguration"
+          },
+          "PutClassificationExportConfiguration": {
+            "Type": "Task",
+            "Parameters": {
+              "Configuration": {
+                "S3Destination": {
+                  "BucketName": "${rS3LoggingBucket}",
+                  "KeyPrefix": "Macie",
+                  "KmsKeyArn": "${rS3LoggingKMSKey.Arn}"
+                }
+              }
+            },
+            "Resource": "arn:aws:states:::aws-sdk:macie2:putClassificationExportConfiguration",
+            "Next": "Macie enabled"
+          },
+          "Macie enabled": {
+            "Type": "Pass",
+            "Result": "Macie enabled",
+            "End": true
+          },
+          "Fail": {
+            "Type": "Fail"
+          },
+          "Skipping Macie Setup": {
+            "Type": "Pass",
+            "End": true,
+            "Result": {
+              "Status": "Macie not configured as per deployment settings"
+            }
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
+
+  rAuditManagerSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-AuditManager"
+      DefinitionString: !Sub '{
+        "Comment": "Audit Manager state machine",
+        "StartAt": "Get deployment parameters",
+        "States": {
+          "Get deployment parameters": {
+            "Type": "Pass",
+            "Next": "Enable Audit Manager?",
+            "Result": {
+              "EnableAuditManager": ${pAuditManager}
+            }
+          },
+          "Enable Audit Manager?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.EnableAuditManager",
+                "BooleanEquals": false,
+                "Next": "Skipping Audit Manager setup"
+              },
+              {
+                "Variable": "$.EnableAuditManager",
+                "BooleanEquals": true,
+                "Next": "RegisterAccount"
+              }
+            ],
+            "Default": "RegisterAccount"
+          },
+          "Skipping Audit Manager setup": {
+            "Type": "Pass",
+            "End": true,
+            "Result": {
+              "Status": "Audit Manager not enabled as per deployment settings"
+            }
+          },
+          "RegisterAccount": {
+            "Type": "Task",
+            "Next": "GetAccountStatus",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:auditmanager:registerAccount"
+          },
+          "GetAccountStatus": {
+            "Type": "Task",
+            "Next": "Is Audit Manager enabled?",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:auditmanager:getAccountStatus"
+          },
+          "Is Audit Manager enabled?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.Status",
+                "StringEquals": "ACTIVE",
+                "Next": "Audit Manager enabled"
+              }
+            ],
+            "Default": "Fail"
+          },
+          "Audit Manager enabled": {
+            "Type": "Pass",
+            "Result": "Audit Manager enabled",
+            "End": true
+          },
+          "Fail": {
+            "Type": "Fail"
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
+
+  rInspectorSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-Inspector"
+      DefinitionString: !Sub '{
+        "Comment": "Inspector state machine",
+        "StartAt": "GetInspectorStatus",
+        "States": {
+          "GetInspectorStatus": {
+            "Type": "Task",
+            "Next": "Is Inspector enabled?",
+            "Parameters": {},
+            "Resource": "arn:aws:states:::aws-sdk:inspector2:batchGetAccountStatus"
+          },
+          "Is Inspector enabled?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Or": [
+                  {
+                    "Variable": "$.Accounts[0].State.Status",
+                    "StringEquals": "ENABLED"
+                  },
+                  {
+                    "Variable": "$.Accounts[0].State.Status",
+                    "StringEquals": "ENABLING"
+                  }
+                ],
+                "Comment": "Yes",
+                "Next": "AWS Inspector is enabled"
+              },
+              {
+                "Variable": "$.AttemptedToEnable",
+                "IsPresent": true,
+                "Comment": "Attempted to enable failed",
+                "Next": "Fail"
+              },
+              {
+                "Variable": "$.Accounts[0].State.Status",
+                "StringEquals": "DISABLED",
+                "Next": "Get deployment parameters"
+              }
+            ],
+            "Default": "Fail"
+          },
+          "Get deployment parameters": {
+            "Type": "Pass",
+            "Next": "Should it be?",
+            "Result": {
+              "EnableInspector": ${pInspector}
+            }
+          },
+          "Should it be?": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.EnableInspector",
+                "BooleanEquals": true,
+                "Next": "Enable Inspector",
+                "Comment": "Yes"
+              },
+              {
+                "Variable": "$.EnableInspector",
+                "BooleanEquals": false,
+                "Next": "Skipping Inspector setup",
+                "Comment": "No"
+              }
+            ],
+            "Default": "Enable Inspector"
+          },
+          "Enable Inspector": {
+            "Type": "Task",
+            "Next": "Attempted to enable AWS Inspector",
+            "Parameters": {
+              "ResourceTypes": [
+                "EC2",
+                "ECR"
+              ]
+            },
+            "Resource": "arn:aws:states:::aws-sdk:inspector2:enable",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "BackoffRate": 2,
+                "IntervalSeconds": 4,
+                "MaxAttempts": 2
+              }
+            ]
+          },
+          "Attempted to enable AWS Inspector": {
+            "Type": "Pass",
+            "Next": "GetInspectorStatus",
+            "Result": {
+              "AttemptedToEnable": "true"
+            }
+          },
+          "AWS Inspector is enabled": {
+            "Type": "Pass",
+            "Result": "AWS Inspector is enabled",
+            "End": true
+          },
+          "Fail": {
+            "Type": "Fail"
+          },
+          "Skipping Inspector setup": {
+            "Type": "Pass",
+            "End": true,
+            "Result": {
+              "Status": "Inspector not configured as per deployment settings"
+            }
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
+
+  rAccountLevelSettingsSSI:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "SSI-AccountLevelSettings"
+      DefinitionString: !Sub '{
+        "Comment": "Account Level Settings state machine",
+        "StartAt": "Get deployment parameters",
+        "States": {
+          "Get deployment parameters": {
+            "Type": "Pass",
+            "Next": "Run EBS and S3 settings in parallel",
+            "Result": {
+              "BlockPublicS3": ${pS3BPA},
+              "EbsEncryptionByDefault": ${pEbsEncrypt}
+            }
+          },
+          "Run EBS and S3 settings in parallel": {
+            "Type": "Parallel",
+            "Branches": [
+              {
+                "StartAt": "Block S3 Public Access?",
+                "States": {
+                  "Block S3 Public Access?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "Variable": "$.BlockPublicS3",
+                        "BooleanEquals": false,
+                        "Next": "S3 Public Access Skipped",
+                        "Comment": "Skipped"
+                      }
+                    ],
+                    "Default": "Put Public Access Block"
+                  },
+                  "S3 Public Access Skipped": {
+                    "Type": "Pass",
+                    "Result": {
+                      "S3PublicAccess": "S3 Public Access not configured as per deployment settings"
+                    },
+                    "End": true
+                  },
+                  "Put Public Access Block": {
+                    "Type": "Task",
+                    "Parameters": {
+                      "AccountId": "${AWS::AccountId}",
+                      "PublicAccessBlockConfiguration": {
+                        "BlockPublicAcls": true,
+                        "BlockPublicPolicy": true,
+                        "IgnorePublicAcls": true,
+                        "RestrictPublicBuckets": true
+                      }
+                    },
+                    "Resource": "arn:aws:states:::aws-sdk:s3control:putPublicAccessBlock",
+                    "Next": "Get S3 Public Access Block"
+                  },
+                  "Get S3 Public Access Block": {
+                    "Type": "Task",
+                    "Parameters": {
+                      "AccountId": "${AWS::AccountId}"
+                    },
+                    "Resource": "arn:aws:states:::aws-sdk:s3control:getPublicAccessBlock",
+                    "Next": "Validate S3 Block Public Access"
+                  },
+                  "Validate S3 Block Public Access": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "And": [
+                          {
+                            "Variable": "$.PublicAccessBlockConfiguration.BlockPublicAcls",
+                            "BooleanEquals": true
+                          },
+                          {
+                            "Variable": "$.PublicAccessBlockConfiguration.BlockPublicPolicy",
+                            "BooleanEquals": true
+                          },
+                          {
+                            "And": [
+                              {
+                                "Variable": "$.PublicAccessBlockConfiguration.IgnorePublicAcls",
+                                "BooleanEquals": true
+                              },
+                              {
+                                "Variable": "$.PublicAccessBlockConfiguration.RestrictPublicBuckets",
+                                "BooleanEquals": true
+                              }
+                            ]
+                          }
+                        ],
+                        "Next": "S3 Public access blocked",
+                        "Comment": "BPA Enabled"
+                      }
+                    ],
+                    "Default": "S3 Public Access Failed"
+                  },
+                  "S3 Public access blocked": {
+                    "Type": "Pass",
+                    "Result": {
+                      "S3PublicAccess": "S3 BPA enabled"
+                    },
+                    "End": true
+                  },
+                  "S3 Public Access Failed": {
+                    "Type": "Fail",
+                    "Error": "Failed to Block S3 Public access"
+                  }
+                }
+              },
+              {
+                "StartAt": "Enable EBS Encryption By Default?",
+                "States": {
+                  "Enable EBS Encryption By Default?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "Variable": "$.EbsEncryptionByDefault",
+                        "BooleanEquals": false,
+                        "Next": "Default EBS Encryption Skippped",
+                        "Comment": "Skipped"
+                      }
+                    ],
+                    "Default": "Enable EBS Encryption By Default"
+                  },
+                  "Default EBS Encryption Skippped": {
+                    "Type": "Pass",
+                    "End": true,
+                    "Result": {
+                      "DefaultEbsEncryption": "Default EBS Encryption not configured as per deployment settings"
+                    }
+                  },
+                  "Enable EBS Encryption By Default": {
+                    "Type": "Task",
+                    "Parameters": {},
+                    "Resource": "arn:aws:states:::aws-sdk:ec2:enableEbsEncryptionByDefault",
+                    "Next": "Get EBS Encryption By Default"
+                  },
+                  "Get EBS Encryption By Default": {
+                    "Type": "Task",
+                    "Next": "Validate EBS Encryption",
+                    "Parameters": {},
+                    "Resource": "arn:aws:states:::aws-sdk:ec2:getEbsEncryptionByDefault"
+                  },
+                  "Validate EBS Encryption": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "Variable": "$.EbsEncryptionByDefault",
+                        "BooleanEquals": true,
+                        "Next": "Default EBS Encryption Enabled",
+                        "Comment": "DefaultEncryptionEnabled"
+                      }
+                    ],
+                    "Default": "Default EBS Encryption Failed"
+                  },
+                  "Default EBS Encryption Enabled": {
+                    "Type": "Pass",
+                    "End": true,
+                    "Result": {
+                      "DefaultEbsEncryption": "Enabled"
+                    }
+                  },
+                  "Default EBS Encryption Failed": {
+                    "Type": "Fail",
+                    "Error": "Failed to enable EBS encrption"
+                  }
+                }
+              }
+            ],
+            "End": true
+          }
+        }
+      }'
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rSSILogGroup.Arn
+        IncludeExecutionData: True
+        Level: ALL
+      RoleArn: !GetAtt rStepFunctionWorkerRole.Arn
+      StateMachineType: STANDARD
