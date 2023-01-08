@@ -530,6 +530,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties: 
       DisplayName: SSI-DeploymentErrors
+      KmsMasterKeyId: alias/aws/sns
       Subscription: 
         - Endpoint: !Ref pNotificationEmail
           Protocol: email
